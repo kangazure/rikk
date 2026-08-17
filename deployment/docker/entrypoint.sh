@@ -3,25 +3,31 @@ set -e
 
 cd /var/www/html
 
-# Generate APP_KEY jika belum ada (aman dijalankan berulang, tidak akan
-# menimpa key yang sudah ada di .env produksi)
+# Generate APP_KEY jika belum ada
 if [ -z "$APP_KEY" ]; then
     echo "[entrypoint] APP_KEY kosong, generate baru..."
     php artisan key:generate --force
 fi
 
 # Cache config/route/view untuk performa production.
-# Aman untuk gagal diam-diam jika DB belum siap saat container pertama start.
-php artisan config:cache || true
-php artisan route:cache || true
-php artisan view:cache || true
+echo "[entrypoint] Warming caches..."
+php artisan config:cache 2>/dev/null || echo "[entrypoint] config:cache skipped (DB mungkin belum siap)"
+php artisan route:cache 2>/dev/null || echo "[entrypoint] route:cache skipped"
+php artisan view:cache 2>/dev/null || echo "[entrypoint] view:cache skipped"
 
-# Jalankan migration otomatis saat container start (opsional, bisa
-# dimatikan dengan set RUN_MIGRATIONS=false di environment Dokploy)
+# Start supervisord (nginx + php-fpm) DULU agar container langsung responsif
+echo "[entrypoint] Starting supervisord (nginx + php-fpm)..."
+supervisord -c /etc/supervisor/conf.d/supervisord.conf &
+
+# Tunggu sebentar agar nginx & php-fpm siap
+sleep 2
+
+# Jalankan migration di background SETELAH services jalan
+# Ini tidak blocking, jadi web tetap bisa diakses meskipun migrate gagal
 if [ "${RUN_MIGRATIONS:-true}" = "true" ]; then
-    echo "[entrypoint] Menjalankan migration..."
-    php artisan migrate --force || echo "[entrypoint] Migration gagal/dilewati, cek koneksi database."
+    echo "[entrypoint] Menjalankan migration (background)..."
+    php artisan migrate --force 2>&1 || echo "[entrypoint] Migration gagal/dilewati, cek koneksi database."
 fi
 
-echo "[entrypoint] Starting supervisord (nginx + php-fpm + horizon + scheduler)..."
-exec supervisord -c /etc/supervisor/conf.d/supervisord.conf
+# Keep container alive (supervisord sudah jalan di background)
+wait
