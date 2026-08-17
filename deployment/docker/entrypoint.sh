@@ -11,6 +11,7 @@ fi
 
 # Cache config/route/view untuk performa production.
 echo "[entrypoint] Warming caches..."
+php artisan package:discover --ansi 2>/dev/null || echo "[entrypoint] package:discover skipped"
 php artisan config:cache 2>/dev/null || echo "[entrypoint] config:cache skipped (DB mungkin belum siap)"
 php artisan route:cache 2>/dev/null || echo "[entrypoint] route:cache skipped"
 php artisan view:cache 2>/dev/null || echo "[entrypoint] view:cache skipped"

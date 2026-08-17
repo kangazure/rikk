@@ -19,7 +19,9 @@ WORKDIR /app
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs
 COPY . .
-RUN composer dump-autoload --optimize --no-dev
+# --no-scripts: skip artisan package:discover di build stage
+# (composer:2 image tidak punya ekstensi pgsql, package discovery dijalankan di runtime via entrypoint.sh)
+RUN composer dump-autoload --optimize --no-dev --no-scripts
 
 # ---- Stage 3: Runtime image ----
 FROM php:8.3-fpm-alpine
