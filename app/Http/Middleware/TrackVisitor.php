@@ -47,26 +47,31 @@ class TrackVisitor
 
     protected function record(Request $request): void
     {
-        $sessionId = $request->session()->getId();
-        $cacheKey = "visitor_tracked:{$sessionId}:{$request->path()}";
+        try {
+            $sessionId = $request->session()->getId();
+            $cacheKey = "visitor_tracked:{$sessionId}:{$request->path()}";
 
-        // Dedup window 5 menit — mencegah satu sesi membanjiri tabel visitor
-        // hanya karena reload halaman berulang.
-        if (Cache::has($cacheKey)) {
-            return;
+            // Dedup window 5 menit — mencegah satu sesi membanjiri tabel visitor
+            // hanya karena reload halaman berulang.
+            if (Cache::has($cacheKey)) {
+                return;
+            }
+
+            Cache::put($cacheKey, true, now()->addMinutes(5));
+
+            Visitor::query()->create([
+                'session_id' => $sessionId,
+                'ip_address' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'referrer' => $request->header('referer'),
+                'landing_page' => $request->fullUrl(),
+                'device_type' => $this->detectDeviceType($request->userAgent()),
+                'visited_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Analytics tracking tidak boleh memblokir request user.
+            // Gagal diam jika DB/cache belum siap (container baru deploy).
         }
-
-        Cache::put($cacheKey, true, now()->addMinutes(5));
-
-        Visitor::query()->create([
-            'session_id' => $sessionId,
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-            'referrer' => $request->header('referer'),
-            'landing_page' => $request->fullUrl(),
-            'device_type' => $this->detectDeviceType($request->userAgent()),
-            'visited_at' => now(),
-        ]);
     }
 
     protected function detectDeviceType(?string $userAgent): string
